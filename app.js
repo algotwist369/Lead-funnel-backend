@@ -5,6 +5,8 @@ const compression = require("compression");
 const morgan = require("morgan");
 const rateLimit = require("express-rate-limit");
 const errorHandler = require("./middlewares/error.middleware.js");
+require("dotenv").config();
+
 
 // Routes
 const authRoutes = require("./routes/auth.routes.js");
