@@ -3,6 +3,80 @@ const Funnel = require("../models/funnel.js");
 const PDFDocument = require("pdfkit");
 const asyncHandler = require("../utils/async_handler.js");
 
+const normalizePhoneDigits = (phone = "") => phone.replace(/\D/g, "");
+
+const isValidInternationalPhone = (phone = "") => {
+    const trimmed = phone.trim();
+    const digits = normalizePhoneDigits(trimmed);
+
+    if (!trimmed) return false;
+    if (digits.length < 7 || digits.length > 15) return false;
+    if (!/^[+\d][\d\s().-]{6,24}$/.test(trimmed)) return false;
+    if ((trimmed.match(/\+/g) || []).length > 1) return false;
+    if (trimmed.includes("+") && !trimmed.startsWith("+")) return false;
+    if (/^(\d)\1+$/.test(digits)) return false;
+
+    return true;
+};
+
+const isValidEmail = (email = "") =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
+
+const validateLeadPayload = (body, funnel) => {
+    const errors = {};
+    const capture = funnel.capture_step || {};
+    const askName = capture.ask_name !== false;
+    const askPhone = capture.ask_phone !== false;
+    const askEmail = capture.ask_email === true;
+    const askAddress = capture.ask_address === true;
+
+    const name = (body.name || "").trim();
+    const phone = (body.phone || "").trim();
+    const email = (body.email || "").trim();
+    const address = (body.address || "").trim();
+
+    if (askName || name) {
+        if (!name) errors.name = "Name is required";
+        else if (name.length < 2 || name.length > 80) errors.name = "Name must be 2-80 characters";
+        else if (!/^[\p{L}\p{M}][\p{L}\p{M}\s.'-]{1,79}$/u.test(name)) {
+            errors.name = "Name contains invalid characters";
+        }
+    }
+
+    if (askPhone || phone) {
+        if (!phone) errors.phone = "Phone number is required";
+        else if (!isValidInternationalPhone(phone)) errors.phone = "Phone number is invalid";
+    }
+
+    if (askEmail || email) {
+        if (!email) errors.email = "Email is required";
+        else if (!isValidEmail(email)) errors.email = "Email is invalid";
+    }
+
+    if (askAddress || address) {
+        if (askAddress && !address) errors.address = "Address is required";
+        else if (address && (address.length < 6 || address.length > 250)) {
+            errors.address = "Address must be 6-250 characters";
+        }
+    }
+
+    if (body.preferred_contact && !["call", "whatsapp"].includes(body.preferred_contact)) {
+        errors.preferred_contact = "Preferred contact is invalid";
+    }
+
+    return {
+        errors,
+        sanitized: {
+            name,
+            phone,
+            email,
+            address,
+            preferred_contact: body.preferred_contact || "call"
+        },
+        isValid: Object.keys(errors).length === 0
+    };
+};
+
 /**
  * @desc    Submit a new lead
  * @route   POST /api/leads
@@ -16,9 +90,19 @@ const submit_lead = asyncHandler(async (req, res) => {
         return res.status(404).json({ success: false, message: "Invalid funnel" });
     }
 
+    const validation = validateLeadPayload(req.body, funnel);
+    if (!validation.isValid) {
+        return res.status(400).json({
+            success: false,
+            message: "Please check the form fields",
+            errors: validation.errors
+        });
+    }
+
     // Create lead
     const lead = await Lead.create({
         ...req.body,
+        ...validation.sanitized,
         business_user_id: funnel.business_user_id
     });
 

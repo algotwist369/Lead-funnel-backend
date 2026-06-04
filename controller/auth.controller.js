@@ -3,7 +3,24 @@ const { OAuth2Client } = require("google-auth-library");
 const BusinessUser = require("../models/business_user.js");
 const asyncHandler = require("../utils/async_handler.js");
 
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const getGoogleAudiences = () => {
+    const fallbackClientIds = [
+        "1035838949713-7atp6lfctnsk8modn8r537ce7mbo1snn.apps.googleusercontent.com",
+        "437429633678-mosk9iguvlap3htfu3nd6qh50sgvq05j.apps.googleusercontent.com"
+    ];
+
+    return [
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_IDS,
+        ...fallbackClientIds
+    ]
+        .filter(Boolean)
+        .flatMap((value) => value.split(","))
+        .map((value) => value.trim())
+        .filter(Boolean);
+};
+
+const googleClient = new OAuth2Client();
 
 /**
  * @desc    Google Login / Register
@@ -19,7 +36,7 @@ const google_login = asyncHandler(async (req, res) => {
 
     const ticket = await googleClient.verifyIdToken({
         idToken: id_token,
-        audience: process.env.GOOGLE_CLIENT_ID
+        audience: getGoogleAudiences()
     });
 
     const payload = ticket.getPayload();
